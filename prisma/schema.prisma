@@ -1,0 +1,31 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Categories {
+  id         Int          @id @default(autoincrement())
+  name       String       @unique
+  picture    String
+  parent_id  Int?
+  parent     Categories?  @relation("CategoryRelation", fields: [parent_id], references: [id])
+  children   Categories[] @relation("CategoryRelation")
+  created_at DateTime     @default(now())
+  updated_at DateTime     @updatedAt
+
+  products Products[] @relation("CategoryProducts")
+}
+
+model Products {
+  id          Int        @id @default(autoincrement())
+  name        String     @unique
+  picture     String
+  category_id Int
+  category    Categories @relation("CategoryProducts", fields: [category_id], references: [id])
+  created_at  DateTime   @default(now())
+  updated_at  DateTime   @updatedAt
+}
