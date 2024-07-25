@@ -40,6 +40,7 @@
                 <h5 class="mb-1">{{ category.name }}</h5>
                 <p class="mb-1">ID: {{ category.id }}</p>
                 <p class="mb-1">Parent ID: {{ category.parent_id }}</p>
+                <p class="mb-1">Products Count: {{ category.productCount }}</p>
               </div>
               <button
                 @click="editCategory(category)"
