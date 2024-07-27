@@ -1,8 +1,8 @@
-// server/api/categories.ts
-
 import { defineEventHandler, readBody, getQuery } from "h3";
 import { PrismaClient } from "@prisma/client";
 import cloudinary from "cloudinary";
+import sharp from "sharp";
+import { Readable } from "stream";
 
 cloudinary.config({
   cloud_name: process.env.CLOUD_NAME,
@@ -45,6 +45,13 @@ function buildCategoryTreeWithCounts(categories) {
   return tree;
 }
 
+function bufferToStream(buffer) {
+  const stream = new Readable();
+  stream.push(buffer);
+  stream.push(null);
+  return stream;
+}
+
 export default defineEventHandler(async (event) => {
   const method = event.node.req.method;
 
@@ -59,27 +66,40 @@ export default defineEventHandler(async (event) => {
 
       case "POST":
         const createData = await readBody(event);
-        console.log(createData);
-        console.log("===================================");
         let pictureUrl = "";
         if (createData.picture) {
-          // Upload image to Cloudinary
-          const uploadResult = await cloudinary.v2.uploader.upload(
-            createData.picture,
-            {
-              folder: "categories", // Optional: folder in Cloudinary
-            }
+          // Convert base64 string to buffer
+          const picture = createData.picture.substring(
+            createData.picture.indexOf(",") + 1
           );
+          const imageBuffer = Buffer.from(picture, "base64");
+          // Resize the image to fit within 3200x3200
+          const resizedBuffer = await sharp(imageBuffer)
+            .resize(3200, 3200, { fit: "inside" })
+            .toBuffer();
 
-          pictureUrl = uploadResult.secure_url;
-          console.log(pictureUrl);
+          // Upload resized image to Cloudinary
+          pictureUrl = await new Promise((resolve, reject) => {
+            const uploadStream = cloudinary.v2.uploader.upload_stream(
+              { folder: "categories" }, // Optional: specify a folder in Cloudinary
+              (error, result) => {
+                if (error) {
+                  return reject(error);
+                }
+                resolve(result.secure_url);
+              }
+            );
+
+            // Stream the buffer to Cloudinary
+            uploadStream.end(resizedBuffer);
+          });
         }
 
-        // Save category with image URL
+        // Save the category with the image URL
         const newCategory = await prisma.categories.create({
           data: {
             ...createData,
-            picture: pictureUrl, // Save the image URL in the database
+            picture: pictureUrl,
           },
         });
         return newCategory;
@@ -88,15 +108,32 @@ export default defineEventHandler(async (event) => {
         const updateId = Number(getQuery(event).id);
         const updateData = await readBody(event);
         let picUrl = updateData.picture;
+
         if (updateData.picture && updateData.picture !== "") {
-          const uploadResult = await cloudinary.v2.uploader.upload(
-            updateData.picture,
-            {
-              folder: "categories", // Optional: folder in Cloudinary
-            }
+          const picture = updateData.picture.substring(
+            updateData.picture.indexOf(",") + 1
           );
-          picUrl = uploadResult.secure_url;
+          const imageBuffer = Buffer.from(picture, "base64");
+
+          const resizedBuffer = await sharp(imageBuffer)
+            .resize(3200, 3200, { fit: "inside" })
+            .toBuffer();
+
+          picUrl = await new Promise((resolve, reject) => {
+            const uploadStream = cloudinary.v2.uploader.upload_stream(
+              { folder: "categories" }, // Optional: specify a folder in Cloudinary
+              (error, result) => {
+                if (error) {
+                  return reject(error);
+                }
+                resolve(result.secure_url);
+              }
+            );
+            // Stream the buffer to Cloudinary
+            uploadStream.end(resizedBuffer);
+          });
         }
+
         const updatedCategory = await prisma.categories.update({
           where: { id: updateId },
           data: {
@@ -119,11 +156,8 @@ export default defineEventHandler(async (event) => {
 
         if (childCategories.length > 0 || productsInCategory.length > 0) {
           return {
-            statusCode: 400,
-            body: {
-              error:
-                "Category has associated records. Handle them before deletion.",
-            },
+            message:
+              "Category has associated records. Handle them before deletion.",
           };
         }
 
@@ -133,10 +167,10 @@ export default defineEventHandler(async (event) => {
         return { message: "Category deleted successfully" };
 
       default:
-        return { statusCode: 405, body: { error: "Method not allowed" } };
+        return "Method not allowed";
     }
   } catch (error) {
     console.error("Error:", error);
-    return { statusCode: 500, body: { error: "Internal server error" } };
+    return "Internal server error";
   }
 });
