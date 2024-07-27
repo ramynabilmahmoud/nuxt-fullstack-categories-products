@@ -10,38 +10,42 @@ cloudinary.config({
 });
 const prisma = new PrismaClient();
 
-function countProducts(category) {
-  let count = category.products.length;
-  category.children.forEach((child) => {
-    count += countProducts(child);
+async function buildCategoryTree(categories) {
+  const categoryMap = new Map();
+
+  // Map categories by ID
+  categories.forEach((category) => {
+    categoryMap.set(category.id, { ...category, children: [] });
   });
-  return count;
-}
 
-function buildCategoryTreeWithCounts(categories) {
-  const map = new Map();
-  categories.forEach((cat) =>
-    map.set(cat.id, { ...cat, children: [], productCount: 0 })
-  );
-
-  const tree = [];
-
-  categories.forEach((cat) => {
-    if (cat.parent_id) {
-      const parent = map.get(cat.parent_id);
+  // Build the tree structure
+  const rootCategories = [];
+  categoryMap.forEach((category) => {
+    if (category.parent_id) {
+      const parent = categoryMap.get(category.parent_id);
       if (parent) {
-        parent.children.push(map.get(cat.id));
+        parent.children.push(category);
       }
     } else {
-      tree.push(map.get(cat.id));
+      rootCategories.push(category);
     }
   });
 
-  tree.forEach((root) => {
-    root.productCount = countProducts(root);
+  return rootCategories;
+}
+
+function countProducts(category) {
+  const products = category.products || [];
+  const children = category.children || [];
+
+  let count = products.length;
+
+  // Recursively accumulate product counts from children
+  children.forEach((child) => {
+    count += countProducts(child).productCount;
   });
 
-  return tree;
+  return { ...category, productCount: count };
 }
 
 export default defineEventHandler(async (event) => {
@@ -51,19 +55,35 @@ export default defineEventHandler(async (event) => {
     switch (method) {
       case "GET":
         const categories = await prisma.categories.findMany({
-          include: { children: true, products: true },
+          include: {
+            children: {
+              include: {
+                children: true,
+                products: true,
+              },
+            },
+            products: true,
+          },
         });
-        const categoryTree = buildCategoryTreeWithCounts(categories);
-        return categories;
+
+        const categoryTree = await buildCategoryTree(categories);
+
+        // Ensure categoryTree is an array
+        if (!Array.isArray(categoryTree)) {
+          throw new Error("Category tree is not an array.");
+        }
+
+        const categoriesWithProductCount = categoryTree.map((category) =>
+          countProducts(category)
+        );
+
+        return categoriesWithProductCount;
 
       case "POST":
         const createData = await readBody(event);
         let pictureUrl = "";
         if (createData.picture) {
           // Convert base64 string to buffer
-          console.log("===================");
-          console.log(createData.picture);
-          console.log("====================");
           const picture = createData.picture.substring(
             createData.picture.indexOf(",") + 1
           );
@@ -94,9 +114,11 @@ export default defineEventHandler(async (event) => {
         const newCategory = await prisma.categories.create({
           data: {
             ...createData,
+            parent_id: createData.parent_id || null, // Ensure parent_id is correctly set or null if no parent
             picture: pictureUrl,
           },
         });
+
         return newCategory;
 
       case "PUT":
@@ -185,6 +207,6 @@ export default defineEventHandler(async (event) => {
     }
   } catch (error) {
     console.error("Error:", error);
-    return "Internal server error";
+    return { error: "Internal server error" };
   }
 });

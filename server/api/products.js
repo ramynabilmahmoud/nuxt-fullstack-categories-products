@@ -13,15 +13,40 @@ const prisma = new PrismaClient();
 
 export default defineEventHandler(async (event) => {
   const method = event.node.req.method;
+  const { parentId } = getQuery(event);
 
   try {
     switch (method) {
+      // case "GET":
+
+      //   // Fetch all products including their associated category
+      //   const products = await prisma.products.findMany({
+      //     include: { category: true },
+      //   });
+      //   return products;
       case "GET":
-        // Fetch all products including their associated category
-        const products = await prisma.products.findMany({
-          include: { category: true },
+        // Fetch parent categories (where parentId is null)
+        const parentCategories = await prisma.categories.findMany({
+          where: { parent_id: null }, // Only fetch parent categories
+          include: {
+            children: {
+              include: {
+                products: true, // Include products in child categories
+              },
+            },
+            products: true, // Include products directly associated with the parent category
+          },
         });
-        return products;
+
+        const result = parentCategories.map((parent) => ({
+          ...parent,
+          products: [
+            ...parent.products,
+            ...parent.children.flatMap((child) => child.products),
+          ],
+        }));
+
+        return result;
 
       case "POST":
         // Create a new product
@@ -60,7 +85,6 @@ export default defineEventHandler(async (event) => {
           },
         });
         return newProduct;
-
       case "PUT":
         const updateId = Number(getQuery(event).id);
         const updateData = await readBody(event);
@@ -128,7 +152,7 @@ export default defineEventHandler(async (event) => {
         return { message: "Product deleted successfully" };
 
       default:
-        return { error: "Method not allowed" };
+        return "Method not allowed";
     }
   } catch (error) {
     console.error("Error:", error);

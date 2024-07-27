@@ -1,7 +1,7 @@
 <template>
   <link
-    href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
     rel="stylesheet"
+    href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
   />
   <div class="container mt-5">
     <h1 class="text-primary mb-4">Category Management</h1>
@@ -26,28 +26,84 @@
             <li
               v-for="category in categories"
               :key="category.id"
-              class="list-group-item d-flex align-items-center mb-3"
+              class="list-group-item"
             >
-              <!-- Add image if available -->
-              <img
-                v-if="category.picture"
-                :src="category.picture"
-                alt="Category Image"
-                class="img-thumbnail me-4"
-                style="width: 100px; height: 100px; object-fit: cover"
-              />
-              <div class="ml-4">
-                <h5 class="mb-1">{{ category.name }}</h5>
-                <p class="mb-1">ID: {{ category.id }}</p>
-                <p class="mb-1">Parent ID: {{ category.parent_id }}</p>
-                <p class="mb-1">Products Count: {{ category.productCount }}</p>
+              <div class="d-flex align-items-center">
+                <span
+                  @click="toggleChildren(category)"
+                  class="toggle-arrow me-2"
+                >
+                  {{ isOpen(category) ? "▼" : "►" }}
+                </span>
+                <img
+                  v-if="category.picture"
+                  :src="category.picture"
+                  alt="Category Image"
+                  class="img-thumbnail me-4"
+                  style="width: 100px; height: 100px; object-fit: cover"
+                />
+                <div>
+                  <h5 class="mb-1">{{ category.name }}</h5>
+                  <p class="mb-1"><strong>ID:</strong> {{ category.id }}</p>
+                  <p class="mb-1">
+                    <strong>Parent ID:</strong> {{ category.parent_id }}
+                  </p>
+                  <p v-if="isTopLevel" class="mb-1">
+                    <strong>Total Product count:</strong>
+                    {{ category.productCount }}
+                  </p>
+                  <button
+                    class="btn btn-warning btn-sm mt-2"
+                    @click="editCategory(category)"
+                  >
+                    Edit
+                  </button>
+                </div>
               </div>
-              <button
-                @click="editCategory(category)"
-                class="btn btn-secondary ms-auto ml-4"
+              <ul
+                v-if="
+                  isOpen(category) &&
+                  Array.isArray(category.children) &&
+                  category.children.length
+                "
+                class="list-group mt-3"
               >
-                Edit
-              </button>
+                <li
+                  v-for="child in category.children"
+                  :key="child.id"
+                  class="list-group-item"
+                >
+                  <!-- Render child content similar to parent -->
+                  <div class="d-flex align-items-center">
+                    <span
+                      @click="toggleChildren(child)"
+                      class="toggle-arrow me-2"
+                    >
+                      {{ isOpen(child) ? "▼" : "►" }}
+                    </span>
+                    <img
+                      v-if="child.picture"
+                      :src="child.picture"
+                      alt="Category Image"
+                      class="img-thumbnail me-4"
+                      style="width: 80px; height: 80px; object-fit: cover"
+                    />
+                    <div>
+                      <h6 class="mb-1">{{ child.name }}</h6>
+                      <p class="mb-1"><strong>ID:</strong> {{ child.id }}</p>
+                      <p class="mb-1">
+                        <strong>Parent ID:</strong> {{ child.parent_id }}
+                      </p>
+                      <button
+                        class="btn btn-warning btn-sm mt-2"
+                        @click="editCategory(child)"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              </ul>
             </li>
           </ul>
         </div>
@@ -77,6 +133,7 @@
               @change="handleFileUpload($event, 'create')"
               type="file"
               class="form-control"
+              required
             />
           </div>
           <div class="mb-3">
@@ -165,7 +222,7 @@
         <h2 class="card-title">Delete Category</h2>
       </div>
       <div class="card-body">
-        <form @submit.prevent="deleteCategory">
+        <form @submit.prevent="handleDeleteCategory">
           <div class="mb-3">
             <label for="delete_id" class="form-label">Category ID:</label>
             <input
@@ -186,11 +243,62 @@
         </div>
       </div>
     </div>
+
+    <!-- Confirmation Modal -->
+    <div
+      class="modal fade"
+      id="deleteConfirmationModal"
+      tabindex="-1"
+      role="dialog"
+      aria-labelledby="deleteConfirmationModalLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="deleteConfirmationModalLabel">
+              Confirm Deletion
+            </h5>
+            <button
+              type="button"
+              class="close"
+              data-dismiss="modal"
+              aria-label="Close"
+            >
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <div class="modal-body">
+            Are you sure you want to delete this category? This action cannot be
+            undone.
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-dismiss="modal"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn-danger"
+              @click="confirmDeleteCategory"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from "vue";
+import { useNuxtApp } from "#app";
+
+const { $nuxt } = useNuxtApp();
 
 const newCategory = ref({
   name: "",
@@ -205,7 +313,20 @@ const updateCategoryData = ref({
   parent_id: null,
 });
 
+const props = defineProps({
+  tree: {
+    type: Array,
+    required: true,
+  },
+  isTopLevel: {
+    type: Boolean,
+    default: true,
+  },
+});
+
 const deleteCategoryId = ref(null);
+const editCategoryData = ref(null);
+const openCategories = ref(new Set());
 
 const categories = ref([]);
 const createError = ref(null);
@@ -235,6 +356,32 @@ const handleFileUpload = async (event, type) => {
     } else if (type === "update") {
       updateCategoryData.value.picture = base64;
     }
+  }
+};
+
+const toggleChildren = (category) => {
+  if (openCategories.value.has(category.id)) {
+    openCategories.value.delete(category.id);
+  } else {
+    openCategories.value.add(category.id);
+  }
+};
+
+const isOpen = (category) => {
+  return openCategories.value.has(category.id);
+};
+
+const editCategory = (category) => {
+  updateCategoryId.value = category.id;
+  updateCategoryData.value = {
+    name: category.name,
+    picture: category.picture,
+    parent_id: category.parent_id,
+  };
+  // Scroll to the update form
+  const updateForm = document.getElementById("updateForm");
+  if (updateForm) {
+    updateForm.scrollIntoView({ behavior: "smooth" });
   }
 };
 
@@ -277,21 +424,20 @@ const updateCategory = async () => {
   }
 };
 
-const deleteCategory = async () => {
+const handleDeleteCategory = () => {
+  $("#deleteConfirmationModal").modal("show");
+};
+
+const confirmDeleteCategory = async () => {
   try {
-    const response = await $fetch(
-      `/api/categories?id=${deleteCategoryId.value}`,
-      {
-        method: "DELETE",
-      }
-    );
-    if (response.message) {
-      deleteSuccess.value = response.message;
-      deleteError.value = null;
-      fetchCategories(); // Refresh category list
-    } else {
-      throw new Error(response.error || "Failed to delete category");
-    }
+    await $fetch(`/api/categories?id=${deleteCategoryId.value}`, {
+      method: "DELETE",
+    });
+    deleteSuccess.value = "Category deleted successfully!";
+    deleteError.value = null;
+    deleteCategoryId.value = null; // Reset form
+    $("#deleteConfirmationModal").modal("hide");
+    fetchCategories(); // Refresh category list
   } catch (err) {
     deleteError.value =
       "Failed to delete category: " +
@@ -311,54 +457,43 @@ const fetchCategories = async () => {
   }
 };
 
-const editCategory = (category) => {
-  updateCategoryId.value = category.id;
-  updateCategoryData.value = {
-    name: category.name,
-    picture: category.picture,
-    parent_id: category.parent_id,
-  };
-  // Scroll to the update form
-  const updateForm = document.getElementById("updateForm");
-  if (updateForm) {
-    updateForm.scrollIntoView({ behavior: "smooth" });
-  }
-};
+// Fetch categories on component mount
+onMounted(() => {
+  fetchCategories();
+});
 
-// Fetch categories when the component is mounted
-onMounted(fetchCategories);
+const handleEditCategory = (category) => {
+  editCategoryData.value = { ...category };
+  updateCategoryId.value = category.id;
+};
 </script>
 
 <style scoped>
-.error {
-  color: red;
-}
-
-.success {
-  color: green;
-}
-
-.card-header {
-  background-color: #f8f9fa;
-}
-
-.card-title {
-  font-size: 1.25rem;
-  font-weight: bold;
+.toggle-arrow {
+  cursor: pointer;
 }
 
 .list-group-item {
-  display: flex;
+  position: relative;
+}
+
+.list-group-item .d-flex {
   align-items: center;
 }
 
-.img-thumbnail {
-  width: 100px;
-  height: 100px;
-  object-fit: cover;
+.list-group-item img {
+  margin-right: 15px;
 }
 
-.me-3 {
-  margin-right: 1rem; /* Adjust spacing as needed */
+.list-group-item h5 {
+  margin-bottom: 5px;
+}
+
+.list-group-item p {
+  margin-bottom: 0;
+}
+
+.list-group-item ul {
+  margin-top: 15px;
 }
 </style>
