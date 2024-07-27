@@ -2,7 +2,6 @@ import { defineEventHandler, readBody, getQuery } from "h3";
 import { PrismaClient } from "@prisma/client";
 import cloudinary from "cloudinary";
 import sharp from "sharp";
-import { Readable } from "stream";
 
 cloudinary.config({
   cloud_name: process.env.CLOUD_NAME,
@@ -45,13 +44,6 @@ function buildCategoryTreeWithCounts(categories) {
   return tree;
 }
 
-function bufferToStream(buffer) {
-  const stream = new Readable();
-  stream.push(buffer);
-  stream.push(null);
-  return stream;
-}
-
 export default defineEventHandler(async (event) => {
   const method = event.node.req.method;
 
@@ -62,13 +54,16 @@ export default defineEventHandler(async (event) => {
           include: { children: true, products: true },
         });
         const categoryTree = buildCategoryTreeWithCounts(categories);
-        return categoryTree;
+        return categories;
 
       case "POST":
         const createData = await readBody(event);
         let pictureUrl = "";
         if (createData.picture) {
           // Convert base64 string to buffer
+          console.log("===================");
+          console.log(createData.picture);
+          console.log("====================");
           const picture = createData.picture.substring(
             createData.picture.indexOf(",") + 1
           );
@@ -107,33 +102,51 @@ export default defineEventHandler(async (event) => {
       case "PUT":
         const updateId = Number(getQuery(event).id);
         const updateData = await readBody(event);
-        let picUrl = updateData.picture;
 
-        if (updateData.picture && updateData.picture !== "") {
-          const picture = updateData.picture.substring(
-            updateData.picture.indexOf(",") + 1
-          );
-          const imageBuffer = Buffer.from(picture, "base64");
+        // Fetch the current category to get the existing picture URL
+        const currentCategory = await prisma.categories.findUnique({
+          where: { id: updateId },
+          select: { picture: true },
+        });
 
-          const resizedBuffer = await sharp(imageBuffer)
-            .resize(3200, 3200, { fit: "inside" })
-            .toBuffer();
+        let picUrl = currentCategory ? currentCategory.picture : null;
 
-          picUrl = await new Promise((resolve, reject) => {
-            const uploadStream = cloudinary.v2.uploader.upload_stream(
-              { folder: "categories" }, // Optional: specify a folder in Cloudinary
-              (error, result) => {
-                if (error) {
-                  return reject(error);
-                }
-                resolve(result.secure_url);
-              }
+        if (updateData.picture) {
+          if (updateData.picture.startsWith("http")) {
+            // The new picture is a URL and should be used directly
+            if (updateData.picture !== picUrl) {
+              // Update URL if it's different
+              picUrl = updateData.picture;
+            }
+          } else {
+            // The new picture is in base64 format, so we need to process it
+            const picture = updateData.picture.substring(
+              updateData.picture.indexOf(",") + 1
             );
-            // Stream the buffer to Cloudinary
-            uploadStream.end(resizedBuffer);
-          });
+            const imageBuffer = Buffer.from(picture, "base64");
+            const resizedBuffer = await sharp(imageBuffer)
+              .resize(3200, 3200, { fit: "inside" })
+              .toBuffer();
+
+            // Upload resized image to Cloudinary
+            picUrl = await new Promise((resolve, reject) => {
+              const uploadStream = cloudinary.v2.uploader.upload_stream(
+                { folder: "categories" }, // Optional: specify a folder in Cloudinary
+                (error, result) => {
+                  if (error) {
+                    return reject(error);
+                  }
+                  resolve(result.secure_url);
+                }
+              );
+
+              // Stream the buffer to Cloudinary
+              uploadStream.end(resizedBuffer);
+            });
+          }
         }
 
+        // Update the category with new data
         const updatedCategory = await prisma.categories.update({
           where: { id: updateId },
           data: {
@@ -141,6 +154,7 @@ export default defineEventHandler(async (event) => {
             picture: picUrl,
           },
         });
+
         return updatedCategory;
 
       case "DELETE":

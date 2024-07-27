@@ -3,9 +3,8 @@
     href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
     rel="stylesheet"
   />
-  <div class="container mt-5">
-    <h1 class="text-primary mb-4">Product Management</h1>
-
+  <div>
+    <h2>Product Management</h2>
     <!-- Fetch and Display Products -->
     <div class="card mb-4">
       <div class="card-header">
@@ -38,7 +37,7 @@
                 class="img-thumbnail me-4"
                 style="width: 100px; height: 100px; object-fit: cover"
               />
-              <div>
+              <div class="ml-4">
                 <h5 class="mb-1">{{ product.name }}</h5>
                 <p class="mb-1">ID: {{ product.id }}</p>
                 <p class="mb-1">Category ID: {{ product.category_id }}</p>
@@ -73,13 +72,11 @@
             />
           </div>
           <div class="mb-3">
-            <label for="picture" class="form-label">Product Picture URL:</label>
+            <label for="picture" class="form-label">Product Picture:</label>
             <input
-              v-model="newProduct.picture"
-              id="picture"
-              type="text"
+              @change="handleFileUpload($event, 'create')"
+              type="file"
               class="form-control"
-              required
             />
           </div>
           <div class="mb-3">
@@ -132,13 +129,10 @@
             />
           </div>
           <div class="mb-3">
-            <label for="update_picture" class="form-label"
-              >New Picture URL:</label
-            >
+            <label for="update_picture" class="form-label">New Picture:</label>
             <input
-              v-model="updateProductData.picture"
-              id="update_picture"
-              type="text"
+              @change="handleFileUpload($event, 'update')"
+              type="file"
               class="form-control"
             />
           </div>
@@ -220,6 +214,27 @@ const updateSuccess = ref(null);
 const deleteError = ref(null);
 const deleteSuccess = ref(null);
 const fetchError = ref(null);
+
+const convertToBase64 = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
+
+const handleFileUpload = async (event, type) => {
+  const file = event.target.files[0];
+  if (file) {
+    const base64 = await convertToBase64(file);
+    if (type === "create") {
+      newProduct.value.picture = base64;
+    } else if (type === "update") {
+      updateProductData.value.picture = base64;
+    }
+  }
+};
 
 const createProduct = async () => {
   try {
@@ -307,9 +322,15 @@ const editProduct = (product) => {
     picture: product.picture,
     category_id: product.category_id,
   };
-  document.getElementById("updateForm").scrollIntoView({ behavior: "smooth" });
+  const updateForm = document.getElementById("updateForm");
+  if (updateForm) {
+    updateForm.scrollIntoView();
+  }
 };
 
-// Fetch products when the component is mounted
 fetchProducts();
 </script>
+
+<style scoped>
+/* Your existing styles here */
+</style>
