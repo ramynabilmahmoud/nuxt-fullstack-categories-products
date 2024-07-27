@@ -1,130 +1,119 @@
-import { defineEventHandler, readBody, getQuery } from "h3";
-import { PrismaClient } from "@prisma/client";
-import cloudinary from "cloudinary";
-import { IncomingForm } from "formidable";
+<!-- <template>
+  <ul>
+    <li v-for="category in tree" :key="category.id">
+      <div class="category-item">
+        <span @click="toggleChildren(category)" class="toggle-arrow">
+          {{ isOpen(category) ? "▼" : "►" }}
+        </span>
+        <img
+          v-if="category.picture"
+          :src="category.picture"
+          alt="Category Image"
+          class="img-thumbnail me-4"
+          style="width: 100px; height: 100px; object-fit: cover"
+        />
+        <div class="ml-4 category-details">
+          <h5>{{ category.name }}</h5>
+          <p>ID: {{ category.id }}</p>
+          <p>Parent ID: {{ category.parent_id }}</p>
+          <p v-if="isTopLevel">
+            Total Product count: {{ category.productCount }}
+          </p>
+          <button
+            class="btn btn-warning btn-sm mt-2"
+            @click="editCategory(category)"
+          >
+            Edit
+          </button>
+        </div>
+      </div>
+      <ul
+        v-if="
+          isOpen(category) &&
+          Array.isArray(category.children) &&
+          category.children.length
+        "
+        class="children-list"
+      >
+        <CategoryTree :tree="category.children" :isTopLevel="false" />
+      </ul>
+    </li>
+  </ul>
+</template>
 
-const prisma = new PrismaClient();
+<script setup>
+import { ref } from "vue";
 
-// Configure Cloudinary
-cloudinary.v2.config({
-  cloud_name: process.env.CLOUD_NAME,
-  api_key: process.env.API_KEY,
-  api_secret: process.env.API_SECRET,
+const updateCategoryId = ref(null);
+const updateCategoryData = ref({
+  name: "",
+  picture: "",
+  parent_id: null,
 });
 
-function countProducts(category) {
-  let count = category.products.length;
-  category.children.forEach((child) => {
-    count += countProducts(child);
-  });
-  return count;
-}
+const props = defineProps({
+  tree: {
+    type: Array,
+    required: true,
+  },
+  isTopLevel: {
+    type: Boolean,
+    default: true,
+  },
+});
 
-function buildCategoryTreeWithCounts(categories) {
-  const map = new Map();
-  categories.forEach((cat) =>
-    map.set(cat.id, { ...cat, children: [], productCount: 0 })
-  );
+const emit = defineEmits(["editCategory"]);
 
-  const tree = [];
+const openCategories = ref(new Set());
 
-  categories.forEach((cat) => {
-    if (cat.parent_id) {
-      const parent = map.get(cat.parent_id);
-      if (parent) {
-        parent.children.push(map.get(cat.id));
-      }
-    } else {
-      tree.push(map.get(cat.id));
-    }
-  });
-
-  tree.forEach((root) => {
-    root.productCount = countProducts(root);
-  });
-
-  return tree;
-}
-
-export default defineEventHandler(async (event) => {
-  const method = event.node.req.method;
-
-  try {
-    switch (method) {
-      case "GET":
-        const categories = await prisma.categories.findMany({
-          include: { children: true, products: true },
-        });
-        const categoryTree = buildCategoryTreeWithCounts(categories);
-        return categoryTree;
-
-      case "POST":
-        const form = new IncomingForm();
-        const { fields, files } = await new Promise((resolve, reject) => {
-          form.parse(event.node.req, (err, fields, files) => {
-            if (err) reject(err);
-            else resolve({ fields, files });
-          });
-        });
-
-        let pictureUrl = null;
-        if (files.picture) {
-          const result = await cloudinary.v2.uploader.upload(
-            files.picture[0].filepath,
-            {
-              transformation: [
-                { width: 3200, height: 3200, crop: "fit" }, // Resize the image to fit within 3200x3200 pixels
-              ],
-            }
-          );
-          pictureUrl = result.secure_url;
-        }
-
-        const newCategory = await prisma.categories.create({
-          data: {
-            name: fields.name[0],
-            picture: pictureUrl,
-            parent_id: fields.parent_id ? Number(fields.parent_id) : null,
-          },
-        });
-        return newCategory;
-
-      case "PUT":
-        const id = Number(getQuery(event).id);
-        const updateData = await readBody(event);
-        let updatedPictureUrl = updateData.picture;
-        if (updateData.picture && typeof updateData.picture === "object") {
-          const result = await cloudinary.v2.uploader.upload(
-            updateData.picture.filepath,
-            {
-              transformation: [{ width: 3200, height: 3200, crop: "limit" }],
-            }
-          );
-          updatedPictureUrl = result.secure_url;
-        }
-        console.log(updateData.name);
-        const updatedCategory = await prisma.categories.update({
-          where: { id },
-          data: {
-            name: updateData.name,
-            picture: updatedPictureUrl,
-            parent_id: updateData.parent_id
-              ? Number(updateData.parent_id)
-              : null,
-          },
-        });
-        return updatedCategory;
-
-      case "DELETE":
-        const deleteId = Number(getQuery(event).id);
-        await prisma.categories.delete({ where: { id: deleteId } });
-        return { message: "Category deleted successfully" };
-
-      default:
-        return { error: "Method not allowed" };
-    }
-  } catch (error) {
-    console.error(error);
-    return { error: "Internal server error" };
+const toggleChildren = (category) => {
+  if (openCategories.value.has(category.id)) {
+    openCategories.value.delete(category.id);
+  } else {
+    openCategories.value.add(category.id);
   }
-});
+};
+
+const isOpen = (category) => {
+  return openCategories.value.has(category.id);
+};
+
+const editCategory = (category) => {
+  updateCategoryId.value = category.id;
+  updateCategoryData.value = {
+    name: category.name,
+    picture: category.picture,
+    parent_id: category.parent_id,
+  };
+  // Scroll to the update form
+  const updateForm = document.getElementById("updateForm");
+  if (updateForm) {
+    updateForm.scrollIntoView({ behavior: "smooth" });
+  }
+};
+</script>
+
+<style scoped>
+/* Keep existing styles */
+.category-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.toggle-arrow {
+  cursor: pointer;
+  margin-right: 10px;
+}
+
+.category-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.children-list {
+  padding-left: 20px; /* Indent children */
+  border-left: 1px solid #ddd; /* Optional: add a line to indicate nesting */
+  margin-top: 10px; /* Space between parent and children */
+}
+</style> -->
