@@ -2,7 +2,13 @@
 
 import { defineEventHandler, readBody, getQuery } from "h3";
 import { PrismaClient } from "@prisma/client";
+import cloudinary from "cloudinary";
 
+cloudinary.config({
+  cloud_name: process.env.CLOUD_NAME,
+  api_key: process.env.API_KEY,
+  api_secret: process.env.API_SECRET,
+});
 const prisma = new PrismaClient();
 
 function countProducts(category) {
@@ -53,17 +59,50 @@ export default defineEventHandler(async (event) => {
 
       case "POST":
         const createData = await readBody(event);
+        console.log(createData);
+        console.log("===================================");
+        let pictureUrl = "";
+        if (createData.picture) {
+          // Upload image to Cloudinary
+          const uploadResult = await cloudinary.v2.uploader.upload(
+            createData.picture,
+            {
+              folder: "categories", // Optional: folder in Cloudinary
+            }
+          );
+
+          pictureUrl = uploadResult.secure_url;
+          console.log(pictureUrl);
+        }
+
+        // Save category with image URL
         const newCategory = await prisma.categories.create({
-          data: createData,
+          data: {
+            ...createData,
+            picture: pictureUrl, // Save the image URL in the database
+          },
         });
         return newCategory;
 
       case "PUT":
         const updateId = Number(getQuery(event).id);
         const updateData = await readBody(event);
+        let picUrl = updateData.picture;
+        if (updateData.picture && updateData.picture !== "") {
+          const uploadResult = await cloudinary.v2.uploader.upload(
+            updateData.picture,
+            {
+              folder: "categories", // Optional: folder in Cloudinary
+            }
+          );
+          picUrl = uploadResult.secure_url;
+        }
         const updatedCategory = await prisma.categories.update({
           where: { id: updateId },
-          data: updateData,
+          data: {
+            ...updateData,
+            picture: picUrl,
+          },
         });
         return updatedCategory;
 

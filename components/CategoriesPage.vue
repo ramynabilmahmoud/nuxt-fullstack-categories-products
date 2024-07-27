@@ -36,7 +36,7 @@
                 class="img-thumbnail me-4"
                 style="width: 100px; height: 100px; object-fit: cover"
               />
-              <div>
+              <div class="ml-4">
                 <h5 class="mb-1">{{ category.name }}</h5>
                 <p class="mb-1">ID: {{ category.id }}</p>
                 <p class="mb-1">Parent ID: {{ category.parent_id }}</p>
@@ -72,13 +72,11 @@
             />
           </div>
           <div class="mb-3">
-            <label for="picture" class="form-label">Picture URL:</label>
+            <label for="picture" class="form-label">Picture:</label>
             <input
-              v-model="newCategory.picture"
-              id="picture"
-              type="text"
+              @change="handleFileUpload($event, 'create')"
+              type="file"
               class="form-control"
-              required
             />
           </div>
           <div class="mb-3">
@@ -132,13 +130,10 @@
             />
           </div>
           <div class="mb-3">
-            <label for="update_picture" class="form-label"
-              >New Picture URL:</label
-            >
+            <label for="update_picture" class="form-label">New Picture:</label>
             <input
-              v-model="updateCategoryData.picture"
-              id="update_picture"
-              type="text"
+              @change="handleFileUpload($event, 'update')"
+              type="file"
               class="form-control"
             />
           </div>
@@ -220,6 +215,28 @@ const updateSuccess = ref(null);
 const deleteError = ref(null);
 const deleteSuccess = ref(null);
 const fetchError = ref(null);
+
+// Function to convert file to base64
+const convertToBase64 = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
+
+const handleFileUpload = async (event, type) => {
+  const file = event.target.files[0];
+  if (file) {
+    const base64 = await convertToBase64(file);
+    if (type === "create") {
+      newCategory.value.picture = base64;
+    } else if (type === "update") {
+      updateCategoryData.value.picture = base64;
+    }
+  }
+};
 
 const createCategory = async () => {
   try {
