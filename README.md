@@ -49,6 +49,11 @@ Create a `.env` file in the root directory and set the following environment var
 
 ```bash
 DATABASE_URL="mysql://user:password@localhost:3306/database_name"
+
+# Cloud service credentials (example: Cloudinary)
+CLOUD_NAME=<add-your-cloudname>
+API_KEY=<add-your-apikey>
+API_SECRET=<add-your-apisecret>
 ```
 
 Replace `user`, `password`, and `database_name` with your actual MySQL credentials.
